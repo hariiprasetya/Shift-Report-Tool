@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Zabbix Problem Analyzer</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <script src="script.js"></script>
+  <body>
+    <div class="container">
+      <h1>Zabbix Problem Analyzer</h1>
+      <p>Unggah file CSV untuk menganalisis masalah Zabbix:</p>
+
+      <label for="operatorName">Operator:</label>
+      <select id="operatorName">
+        <option value="Aaqil">Aaqil</option>
+        <option value="Armin">Armin</option>
+        <option value="Agung">Agung</option>
+        <option value="Alif">Alif</option>
+        <option value="Anissa">Anissa</option>
+        <option value="Harry">Harry</option>
+        <option value="Tegar">Tegar</option>
+        <option value="Udin">Udin</option>
+      </select>
+
+      <div class="shift-container">
+        <select id="shift">
+          <option value="A">Shift A: 06:00 - 15:00</option>
+          <option value="C">Shift C: 14:00 - 23:00</option>
+          <option value="M">Shift M: 22:00 - 07:00</option>
+          <option value="D">Full Day: 00:00 - 23:59</option>
+        </select>
+      </div>
+
+      <label for="date">Tanggal:</label>
+      <input type="date" id="date" />
+
+      <label for="csvFile1">File CSV 1:</label>
+      <input type="file" id="csvFile1" accept=".csv" />
+      <label for="csvFile2">File CSV 2 (optional):</label>
+      <input type="file" id="csvFile2" accept=".csv" />
+
+      <button onclick="analyzeCSV()">Generate Report</button>
+      <button onclick="exportToPDF()">Export to PDF</button>
+      <textarea
+        id="report"
+        placeholder="Laporan akan muncul di sini..."
+      ></textarea>
+    </div>
+
+    <div class="footer">© 2025 FDS Monitoring. All rights reserved.</div>
+
+    <div class="profile-picture">
+      <img src="tegar.jpg" alt="Tegar" title="Tegar" />
+    </div>
+
+    <script>
+      // Set default date to today
+      document.addEventListener("DOMContentLoaded", function () {
+        const today = new Date();
+        const dateStr = today.toISOString().split("T")[0];
+        document.getElementById("date").value = dateStr;
+      });
+
+      const analyzeCSV = () => {
+        const file = document.getElementById("csvFile").files[0];
+        const shift = document.getElementById("shift").value;
+        const operatorName = document.getElementById("operatorName").value;
+        const date = document.getElementById("date").value;
+        const reportArea = document.getElementById("report");
+
+        if (!file) return alert("Silakan unggah file CSV terlebih dahulu!");
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const rows = e.target.result
+            .split("\n")
+            .map((row) =>
+              row.split('","').map((cell) => cell.replace(/^"|"$/g, ""))
+            )
+            .slice(1);
+
+          const groups = {
+            nonFollowUp: { Space: [], Memory: [], Temperature: [], Other: [] },
+            followUp: { Space: [], Memory: [], Temperature: [], Other: [] },
+          };
+
+          rows.forEach((row) => {
+            if (row[3] !== "PROBLEM") return;
+
+            const durationMs = parseDuration(row[7]);
+            if (durationMs < 3600000) return;
+
+            const entry = `- ${row[4]}  Durasi: ${standardizeDuration(
+              row[7]
+            )} (start ${formatDate(row[1])})  (${
+              row[10]?.match(/IFG-\d+/) || "N/A"
+            })  *Belum Resolved*`;
+            const group = row[5].includes("Space")
+              ? "Space"
+              : row[5].includes("memory")
+              ? "Memory"
+              : row[5].includes("Temperature")
+              ? "Temperature"
+              : "Other";
+
+            (durationMs < 86400000 ? groups.nonFollowUp : groups.followUp)[
+              group
+            ].push(entry);
+          });
+
+          let report = `Selamat ${getGreetingTime()}, berikut rekap ${
+            shift === "D" ? "daily" : "shift"
+          } problem Zabbix monitoring IFG\n${getShiftDateRange(
+            shift,
+            date
+          )}\n\n`;
+
+          for (const [type, group] of [
+            ["", "nonFollowUp"],
+            ["Follow Up Report:\n\n", "followUp"],
+          ]) {
+            report += type;
+            for (const g in groups[group]) {
+              if (groups[group][g].length) {
+                report += `${
+                  g === "Space"
+                    ? "Space is critically low"
+                    : g === "Memory"
+                    ? "High memory utilization"
+                    : g
+                }\n${groups[group][g].join("\n")}\n\n`;
+              }
+            }
+          }
+
+          report += `Terima kasih\nFDS Monitoring - ${operatorName}`;
+          reportArea.value = report;
+        };
+        reader.readAsText(file);
+      };
+
+      // Helper functions
+      function parseDuration(str) {
+        return Object.entries({
+          M: 30 * 86400,
+          d: 86400,
+          h: 3600,
+          m: 60,
+          s: 1,
+        }).reduce(
+          (ms, [unit, sec]) =>
+            ms + (parseInt(str.match(`(\\d+)${unit}`)?.[1]) || 0) * sec * 1000,
+          0
+        );
+      }
+
+      function standardizeDuration(str) {
+        const ms = parseDuration(str);
+        const months = Math.floor(ms / (30 * 86400000));
+        const days = Math.floor((ms % (30 * 86400000)) / 86400000);
+        const hours = Math.floor((ms % 86400000) / 3600000);
+        const minutes = Math.floor((ms % 3600000) / 60000);
+
+        return ms < 86400000
+          ? `${hours} jam ${minutes} menit`
+          : months
+          ? `${months} bulan ${days} hari ${hours} jam ${minutes} menit`
+          : `${days} hari ${hours} jam ${minutes} menit`;
+      }
+
+      function formatDate(str) {
+        return new Date(str).toLocaleString("en-US", {
+          year: "numeric",
+          month: "numeric",
+          day: "numeric",
+          hour: "numeric",
+          minute: "numeric",
+          hour12: false,
+        });
+      }
+
+      function getShiftDateRange(shift, date) {
+        const d = new Date(date);
+        const shifts = {
+          A: [6, 15], // Shift A: 06:00-15:00
+          C: [14, 23], // Shift C: 14:00-23:00
+          M: [22, 7, 1], // Shift M: 22:00-07:00 (next day)
+          D: [0, 23, 0, true], // Full Day: 00:00-23:59
+        };
+
+        const [startHour, endHour, nextDay = 0, isFullDay = false] =
+          shifts[shift];
+        const start = new Date(d.setHours(startHour, 0, 0, 0));
+        const end = new Date(
+          d.setHours(endHour, isFullDay ? 59 : 0, isFullDay ? 59 : 0, 0)
+        );
+        if (nextDay) end.setDate(d.getDate() + 1);
+
+        const fmt = (d) => {
+          if (isFullDay) {
+            return `${String(d.getDate()).padStart(2, "0")}/${String(
+              d.getMonth() + 1
+            ).padStart(2, "0")}/${d.getFullYear()} ${String(
+              d.getHours()
+            ).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+          }
+          return `${String(d.getDate()).padStart(2, "0")}/${String(
+            d.getMonth() + 1
+          ).padStart(2, "0")}/${d.getFullYear()} ${String(
+            d.getHours()
+          ).padStart(2, "0")}:00`;
+        };
+
+        return isFullDay
+          ? `${fmt(start)} - ${fmt(end)}`
+          : `${fmt(start)} - ${fmt(end)}`;
+      }
+
+      function getGreetingTime() {
+        const hour = new Date().getHours();
+        if (hour < 10) return "pagi";
+        if (hour < 15) return "siang";
+        if (hour < 19) return "sore";
+        return "malam";
+      }
+    </script>
+  </body>
+</html>
