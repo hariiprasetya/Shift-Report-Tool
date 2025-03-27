@@ -366,3 +366,29 @@ function getGreetingTime() {
   if (hour < 19) return "sore";
   return "malam";
 }
+
+function copyReport() {
+  const reportArea = document.getElementById("report");
+  if (!reportArea.value) {
+    alert("Tidak ada laporan untuk disalin!");
+    return;
+  }
+  
+  reportArea.select();
+  reportArea.setSelectionRange(0, 99999); // For mobile devices
+  
+  try {
+    const successful = document.execCommand("copy");
+    if (successful) {
+      alert("Laporan berhasil disalin ke clipboard!");
+    } else {
+      throw new Error("Copy command failed");
+    }
+  } catch (err) {
+    // Fallback for modern browsers
+    navigator.clipboard.writeText(reportArea.value)
+      .then(() => alert("Laporan berhasil disalin ke clipboard!"))
+      .catch(() => alert("Gagal menyalin laporan!"));
+  }
+  window.getSelection().removeAllRanges();
+}
