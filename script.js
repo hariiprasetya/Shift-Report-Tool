@@ -70,8 +70,24 @@ function analyzeCSV() {
     });
 
     const groups = {
-      nonFollowUp: { Space: [], Memory: [], Temperature: [], Other: [] },
-      followUp: { Space: [], Memory: [], Temperature: [], Other: [] },
+      nonFollowUp: {
+        Space: [],
+        Memory: [],
+        Temperature: [],
+        ZabbixAgent: [],
+        ICMP: [],
+        Restart: [],
+        Other: [],
+      },
+      followUp: {
+        Space: [],
+        Memory: [],
+        Temperature: [],
+        ZabbixAgent: [],
+        ICMP: [],
+        Restart: [],
+        Other: [],
+      },
     };
 
     allRows.forEach((row) => {
@@ -82,12 +98,19 @@ function analyzeCSV() {
       )} (start ${formatDate(row[1])})  (${
         row[10]?.match(/IFG-\d+/) || "N/A"
       })  *${status}*`;
-      const group = row[5].includes("Space")
+      const trigger = row[5].toLowerCase();
+      const group = trigger.includes("space")
         ? "Space"
-        : row[5].includes("memory")
+        : trigger.includes("memory")
         ? "Memory"
-        : row[5].includes("Temperature")
+        : trigger.includes("temperature")
         ? "Temperature"
+        : trigger.includes("zabbix agent is not available")
+        ? "ZabbixAgent"
+        : trigger.includes("unavailable by icmp ping")
+        ? "ICMP"
+        : trigger.includes("restart")
+        ? "Restart"
         : "Other";
 
       (durationMs < 86400000 ? groups.nonFollowUp : groups.followUp)[
@@ -100,20 +123,28 @@ function analyzeCSV() {
       date
     )}\n\n`;
 
-    for (const [type, group] of [
+    for (const [type, groupType] of [
       ["", "nonFollowUp"],
       ["Follow Up Report:\n\n", "followUp"],
     ]) {
       report += type;
-      for (const g in groups[group]) {
-        if (groups[group][g].length) {
+      for (const g in groups[groupType]) {
+        if (groups[groupType][g].length > 0) {
           report += `${
             g === "Space"
               ? "Space is critically low"
               : g === "Memory"
               ? "High memory utilization"
-              : g
-          }\n${groups[group][g].join("\n")}\n\n`;
+              : g === "Temperature"
+              ? "High temperature"
+              : g === "ZabbixAgent"
+              ? "Zabbix agent is not available"
+              : g === "ICMP"
+              ? "Unavailable by ICMP ping"
+              : g === "Restart"
+              ? "Host has been restarted"
+              : "Other Issues"
+          }\n${groups[groupType][g].join("\n")}\n\n`;
         }
       }
     }
@@ -201,6 +232,9 @@ function exportToPDF() {
       "Space is Critically Low (Used>90%)": [],
       "Windows: High Memory Utilization (>90% for 5m)": [],
       "CPU Temp: Temperature is above warning threshold: >70°": [],
+      "Zabbix agent is not available": [],
+      "Unavailable by ICMP ping": [],
+      "Host has been restarted": [],
       "Other Issues": [],
     };
 
@@ -224,6 +258,12 @@ function exportToPDF() {
         categories[
           "CPU Temp: Temperature is above warning threshold: >70°"
         ].push(entry);
+      } else if (trigger.includes("zabbix agent is not available")) {
+        categories["Zabbix agent is not available"].push(entry);
+      } else if (trigger.includes("unavailable by icmp ping")) {
+        categories["Unavailable by ICMP ping"].push(entry);
+      } else if (trigger.includes("restart")) {
+        categories["Host has been restarted"].push(entry);
       } else {
         categories["Other Issues"].push(entry);
       }
@@ -373,10 +413,10 @@ function copyReport() {
     alert("Tidak ada laporan untuk disalin!");
     return;
   }
-  
+
   reportArea.select();
   reportArea.setSelectionRange(0, 99999); // For mobile devices
-  
+
   try {
     const successful = document.execCommand("copy");
     if (successful) {
@@ -386,7 +426,8 @@ function copyReport() {
     }
   } catch (err) {
     // Fallback for modern browsers
-    navigator.clipboard.writeText(reportArea.value)
+    navigator.clipboard
+      .writeText(reportArea.value)
       .then(() => alert("Laporan berhasil disalin ke clipboard!"))
       .catch(() => alert("Gagal menyalin laporan!"));
   }
